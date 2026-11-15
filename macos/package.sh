@@ -27,6 +27,21 @@ rm -rf "$OUT/Wine/share/man" "$OUT/Wine/include"
 
 # x86_64 의존 dylib (freetype, gnutls, SDL2, vulkan-loader, MoltenVK 와 그 의존성)
 for f in "$DEPS"/lib/*.dylib; do cp -a "$f" "$OUT/Wine/lib/"; done
+# Vulkan ICD manifest: vulkan-loader 가 이것으로 MoltenVK 를 찾는다. 없으면 VK_KHR_surface 가 없어
+# winevulkan/wined3d(vulkan)/DXVK/CEF 가 모두 GPU 를 못 쓴다.
+# 로더의 첫 검색 경로는 "<실행 파일 디렉터리>/vulkan/icd.d" (= lib/wine/x86_64-unix/vulkan/icd.d) 이고
+# library_path 는 json 파일 기준 상대 경로다.
+mkdir -p "$OUT/Wine/lib/wine/x86_64-unix/vulkan/icd.d"
+cat > "$OUT/Wine/lib/wine/x86_64-unix/vulkan/icd.d/MoltenVK_icd.json" <<'JSON'
+{
+    "file_format_version" : "1.0.0",
+    "ICD": {
+        "library_path": "../../../../libMoltenVK.dylib",
+        "api_version" : "1.4.0",
+        "is_portability_driver" : true
+    }
+}
+JSON
 # 공유 mono / gecko (prefix 마다 설치하지 않음)
 mkdir -p "$OUT/Wine/share/wine"
 cp -a "$DEPS/share/wine/mono" "$DEPS/share/wine/gecko" "$OUT/Wine/share/wine/"
