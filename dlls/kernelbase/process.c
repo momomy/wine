@@ -567,6 +567,32 @@ BOOL WINAPI DECLSPEC_HOTPATCH CreateProcessInternalW( HANDLE token, const WCHAR 
         }
     }
 
+    /* WhiskyWine hack: Steam's UI (CEF) renders from a separate GPU process into a window owned by
+     * the browser process. Cross-process rendering into another process's window is not supported
+     * by winemac.drv (the window stays black, D3D11 swapchain creation fails with E_INVALIDARG),
+     * so run the GPU thread inside the browser process, like Proton/CrossOver do. */
+    {
+        static const WCHAR helper[] = L"steamwebhelper.exe";
+        static const WCHAR extra[] = L" --in-process-gpu --no-sandbox";
+        size_t app_len = lstrlenW( app_name ), helper_len = ARRAY_SIZE(helper) - 1;
+
+        if (app_len >= helper_len && !wcsicmp( app_name + app_len - helper_len, helper )
+            && !wcsstr( tidy_cmdline, L"--type=" ) && !wcsstr( tidy_cmdline, L"--in-process-gpu" ))
+        {
+            size_t len = lstrlenW( tidy_cmdline ) + ARRAY_SIZE(extra);
+            WCHAR *new_cmdline = RtlAllocateHeap( GetProcessHeap(), 0, len * sizeof(WCHAR) );
+
+            if (new_cmdline)
+            {
+                lstrcpyW( new_cmdline, tidy_cmdline );
+                lstrcatW( new_cmdline, extra );
+                if (tidy_cmdline != cmd_line) RtlFreeHeap( GetProcessHeap(), 0, tidy_cmdline );
+                tidy_cmdline = new_cmdline;
+                TRACE( "steamwebhelper command line %s\n", debugstr_w(tidy_cmdline) );
+            }
+        }
+    }
+
     /* Warn if unsupported features are used */
 
     if (flags & (IDLE_PRIORITY_CLASS | HIGH_PRIORITY_CLASS | REALTIME_PRIORITY_CLASS |
