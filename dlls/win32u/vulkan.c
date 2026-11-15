@@ -451,6 +451,15 @@ static VkResult convert_instance_create_info( struct mempool *pool, VkInstanceCr
     if (use_external_memory())
         instance->obj.extensions.has_VK_KHR_external_memory_capabilities = 1;
 
+    /* Portability drivers (MoltenVK on macOS) are only enumerated by the Khronos loader when the
+     * instance opts in. Windows applications never do, so without this every vkCreateInstance
+     * fails with VK_ERROR_INCOMPATIBLE_DRIVER and wined3d-vulkan, DXVK and CEF/ANGLE have no GPU. */
+    if (vulkan_funcs.host_extensions.has_VK_KHR_portability_enumeration)
+    {
+        instance->obj.extensions.has_VK_KHR_portability_enumeration = 1;
+        info->flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
+
     /* VK_KHR_win32_keyed_mutex only requires external memory extensions, but we will use
      * external semaphore fds to implement it, so we enable the instance extensions too */
     instance->obj.extensions.has_VK_KHR_external_semaphore_capabilities = 1;
