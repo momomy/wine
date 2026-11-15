@@ -1,0 +1,55 @@
+name: WhiskyWine
+
+# WineHQ 기반 WhiskyWine 런타임을 빌드한다. (Apple Silicon 러너 + Rosetta, macos/build.sh 와 동일한 방식)
+# - workflow_dispatch : 수동 빌드 → artifact
+# - tag v*            : 빌드 후 GitHub Release 에 Libraries.tar.gz / WhiskyWineVersion.plist 업로드
+#   (Whisky 앱은 releases/latest/download/ 에서 받는다)
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rosetta 2
+        run: softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Build dependencies
+        run: brew install bison lld llvm freetype gnutls sdl2 pkgconf
+
+      - name: Build Wine
+        run: macos/build.sh "$GITHUB_WORKSPACE/build"
+
+      - name: Package
+        run: macos/package.sh "$GITHUB_WORKSPACE/build"
+
+      - name: Smoke test
+        run: |
+          export WINEPREFIX="$RUNNER_TEMP/prefix"
+          build/Libraries/Wine/bin/wine --version
+          build/Libraries/Wine/bin/wine wineboot -i
+          build/Libraries/Wine/bin/wineserver -w
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Libraries
+          path: |
+            build/Libraries.tar.gz
+            build/SUMS.sha
+            macos/WhiskyWineVersion.plist
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "WhiskyWine $GITHUB_REF_NAME" --notes "WineHQ $(cat VERSION)" \
+            build/Libraries.tar.gz macos/WhiskyWineVersion.plist build/SUMS.sha
