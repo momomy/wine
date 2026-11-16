@@ -301,6 +301,19 @@ static NTSTATUS unix_get_endpoint_ids(void *args)
             continue;
         }
 
+        /* WhiskyWine: skip the virtual devices installed by the native macOS Steam client
+         * ("Steam Streaming Speakers/Microphone"). Creating an IO proc on them can block forever in
+         * coreaudiod (seen while native Steam is running), which hangs every program that probes all
+         * endpoints at startup, including Windows Steam itself. Set WINE_KEEP_STEAM_STREAMING_AUDIO=1
+         * to keep them. */
+        if (!getenv("WINE_KEEP_STEAM_STREAMING_AUDIO") &&
+            CFStringHasPrefix(info[params->num].name, CFSTR("Steam Streaming")))
+        {
+            TRACE("skipping native Steam streaming device %u\n", (unsigned int)devices[i]);
+            CFRelease(info[params->num].name);
+            continue;
+        }
+
         addr.mSelector = kAudioDevicePropertyDeviceUID;
         size = sizeof(CFStringRef);
         sc = AudioObjectGetPropertyData(devices[i], &addr, 0, NULL, &size, &info[params->num].uid);
@@ -506,6 +519,22 @@ static AudioComponentInstance get_audiounit(EDataFlow dataflow, AudioDeviceID ad
     AudioComponent comp;
     AudioComponentDescription desc;
     OSStatus sc;
+
+    /* WhiskyWine: while microphone access is undetermined, CoreAudio blocks inside
+     * AudioUnitSetProperty() until the user answers the system prompt. If the prompt cannot be
+     * answered (locked screen, full-screen game) the caller hangs forever, e.g. Steam never gets
+     * past its start-up window. Ask without waiting and fail this attempt instead. */
+    if (dataflow == eCapture)
+    {
+        int authstatus = CoreAudio_get_capture_authorization_status();
+
+        if (authstatus == NOT_DETERMINED)
+        {
+            CoreAudio_request_capture_authorization();
+            WARN("microphone access not determined yet, not opening a capture unit\n");
+            return NULL;
+        }
+    }
 
     memset(&desc, 0, sizeof(desc));
     desc.componentType = kAudioUnitType_Output;

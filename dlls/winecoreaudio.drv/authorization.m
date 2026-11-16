@@ -76,25 +76,18 @@ int CoreAudio_get_capture_authorization_status(void)
  */
 int CoreAudio_request_capture_authorization(void)
 {
-    __block int ret = -1;
-    dispatch_semaphore_t semaphore;
+    static int requested;
+    int ret = -1;
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
 
+    /* WhiskyWine: CrossOver waits here until the user answers the system dialog. Never block:
+     * show the prompt once per process and report "denied" for this attempt (see get_audiounit). */
     if ([AVCaptureDevice respondsToSelector:@selector(requestAccessForMediaType:completionHandler:)])
     {
-        [[NSNotificationCenter defaultCenter] postNotificationName:WineWillShowPermissionDialogNotification
-                                                            object:nil];
-        semaphore = dispatch_semaphore_create(0);
-        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio
-                                 completionHandler:^(BOOL granted){
-            dispatch_semaphore_signal(semaphore);
-            ret = granted ? 1 : 0;
-        }];
-
-        dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
-        dispatch_release(semaphore);
-        [[NSNotificationCenter defaultCenter] postNotificationName:WineDidShowPermissionDialogNotification
-                                                            object:nil];
+        if (!__sync_lock_test_and_set(&requested, 1))
+            [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio
+                                     completionHandler:^(BOOL granted){}];
+        ret = 0;
     }
 
     [pool release];
