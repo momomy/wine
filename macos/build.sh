@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# WhiskyWine (WineHQ 기반) macOS 빌드 스크립트
+# WhiskyWine (CrossOver 26.3 공개 소스 = Wine 11.0 기반) macOS 빌드 스크립트
 #
 # Apple Silicon 에서 sudo / x86_64 Homebrew 없이 x86_64 Wine 을 빌드한다.
 #  - unix 측: Apple clang -arch x86_64 (configure 테스트 실행은 Rosetta 2)
@@ -12,7 +12,9 @@ set -euo pipefail
 
 SRC="${0:A:h:h}"
 BUILD_ROOT="${1:-${SRC:h:h}/build/wine}"
-DEPS_VERSION="${DEPS_VERSION:-11.21}"          # Gcenx 릴리스 태그 (x86_64 dylib, mono, gecko 출처)
+DEPS_VERSION="${DEPS_VERSION:-11.21}"          # Gcenx 릴리스 태그: x86_64 dylib(freetype, gnutls, SDL2, vulkan-loader, MoltenVK 1.4), gecko 출처
+DEPS_FLAVOR="${DEPS_FLAVOR:-devel}"            # stable | devel
+MONO_DEPS_VERSION="${MONO_DEPS_VERSION:-11.0_1}"  # Wine 11.0 이 기대하는 wine-mono 10.4.1 이 들어 있는 Gcenx stable 릴리스
 JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
 BREW="$(brew --prefix)"
 
@@ -22,14 +24,25 @@ INSTALL_DIR="$BUILD_ROOT/install"
 
 # ---------------------------------------------------------------- 1. x86_64 의존성
 if [[ ! -d "$DEPS_DIR/wine/lib" ]]; then
-  echo "==> Gcenx wine-devel-$DEPS_VERSION 에서 x86_64 의존성 추출"
+  echo "==> Gcenx wine-$DEPS_FLAVOR-$DEPS_VERSION 에서 x86_64 의존성 추출"
   mkdir -p "$DEPS_DIR"
-  tarball="$DEPS_DIR/wine-devel-$DEPS_VERSION-osx64.tar.xz"
+  tarball="$DEPS_DIR/wine-$DEPS_FLAVOR-$DEPS_VERSION-osx64.tar.xz"
   [[ -f "$tarball" ]] || curl -fL -o "$tarball" \
-    "https://github.com/Gcenx/macOS_Wine_builds/releases/download/$DEPS_VERSION/wine-devel-$DEPS_VERSION-osx64.tar.xz"
+    "https://github.com/Gcenx/macOS_Wine_builds/releases/download/$DEPS_VERSION/wine-$DEPS_FLAVOR-$DEPS_VERSION-osx64.tar.xz"
   tar -xJf "$tarball" -C "$DEPS_DIR"
-  mv "$DEPS_DIR/Wine Devel.app/Contents/Resources/wine" "$DEPS_DIR/wine"
-  rm -rf "$DEPS_DIR/Wine Devel.app"
+  mv "$DEPS_DIR"/Wine*.app/Contents/Resources/wine "$DEPS_DIR/wine"
+  rm -rf "$DEPS_DIR"/Wine*.app
+fi
+# mono 는 Wine 버전과 짝이 맞아야 한다(dlls/appwiz.cpl/addons.c 의 MONO_VERSION). stable 번들에는 vulkan-loader 가 없어서 mono 만 가져온다.
+if [[ ! -f "$DEPS_DIR/.mono-$MONO_DEPS_VERSION" ]]; then
+  echo "==> Gcenx wine-stable-$MONO_DEPS_VERSION 에서 mono 추출"
+  mtar="$DEPS_DIR/wine-stable-$MONO_DEPS_VERSION-osx64.tar.xz"
+  [[ -f "$mtar" ]] || curl -fL -o "$mtar" \
+    "https://github.com/Gcenx/macOS_Wine_builds/releases/download/$MONO_DEPS_VERSION/wine-stable-$MONO_DEPS_VERSION-osx64.tar.xz"
+  mkdir -p "$DEPS_DIR/monotmp" && tar -xJf "$mtar" -C "$DEPS_DIR/monotmp"
+  rm -rf "$DEPS_DIR/wine/share/wine/mono"
+  mv "$DEPS_DIR"/monotmp/Wine*.app/Contents/Resources/wine/share/wine/mono "$DEPS_DIR/wine/share/wine/mono"
+  rm -rf "$DEPS_DIR/monotmp"; touch "$DEPS_DIR/.mono-$MONO_DEPS_VERSION"
 fi
 DEPS_LIB="$DEPS_DIR/wine/lib"
 
