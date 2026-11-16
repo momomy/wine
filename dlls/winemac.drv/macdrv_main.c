@@ -44,6 +44,7 @@ C_ASSERT(NUM_EVENT_TYPES <= sizeof(macdrv_event_mask) * 8);
 
 int topmost_float_inactive = TOPMOST_FLOAT_INACTIVE_NONFULLSCREEN;
 bool capture_displays_for_fullscreen = false;
+int mouse_move_min_interval = 0; /* ms between mouse moves delivered to the application, 0 = no limit */
 BOOL allow_vsync = TRUE;
 BOOL allow_set_gamma = TRUE;
 /* CrossOver Hack 10912: Mac Edit menu */
@@ -325,6 +326,18 @@ static void setup_options(void)
 
     if (!get_config_key(hkey, appkey, "CaptureDisplaysForFullscreen", buffer, sizeof(buffer)))
         capture_displays_for_fullscreen = IS_OPTION_TRUE(buffer[0]);
+
+    /* Some applications do a lot of work for every WM_MOUSEMOVE on the thread that also drives
+     * their updates (Might & Magic Heroes VI spends ~14 ms per move here), so 60 moves per second
+     * starve everything else. Limit how often moves are handed over; the newest position wins. */
+    if (!get_config_key(hkey, appkey, "MouseMoveMinInterval", buffer, sizeof(buffer)))
+    {
+        const WCHAR *p;
+        int value = 0;
+
+        for (p = buffer; *p >= '0' && *p <= '9' && value < 1000; p++) value = value * 10 + (*p - '0');
+        mouse_move_min_interval = min(value, 1000);
+    }
 
     if (!get_config_key(hkey, appkey, "AllowVerticalSync", buffer, sizeof(buffer)))
         allow_vsync = IS_OPTION_TRUE(buffer[0]);

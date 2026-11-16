@@ -34,6 +34,9 @@
 #include "oleidl.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(event);
+
+extern int mouse_move_min_interval;
+static ULONG last_mouse_move_tick;
 WINE_DECLARE_DEBUG_CHANNEL(imm);
 
 pthread_mutex_t ime_composition_rect_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -430,6 +433,7 @@ void macdrv_handle_event(const macdrv_event *event)
         break;
     case MOUSE_MOVED_RELATIVE:
     case MOUSE_MOVED_ABSOLUTE:
+        last_mouse_move_tick = NtGetTickCount();
         macdrv_mouse_moved(hwnd, event);
         break;
     case MOUSE_SCROLL:
@@ -525,6 +529,11 @@ BOOL macdrv_ProcessEvents(DWORD mask)
         data->current_event->type != APP_QUIT_REQUESTED &&
         data->current_event->type != WINDOW_DRAG_BEGIN)
         event_mask = 0;  /* don't process nested events */
+
+    /* Leave mouse moves in the queue when the last one was delivered too recently. Queued moves are
+     * coalesced, so the application gets the newest position once the interval has passed. */
+    if (mouse_move_min_interval > 0 && NtGetTickCount() - last_mouse_move_tick < mouse_move_min_interval)
+        event_mask &= ~(event_mask_for_type(MOUSE_MOVED_RELATIVE) | event_mask_for_type(MOUSE_MOVED_ABSOLUTE));
 
     while (macdrv_copy_event_from_queue(data->queue, event_mask, &event))
     {
