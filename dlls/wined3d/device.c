@@ -236,6 +236,7 @@ void wined3d_device_cleanup(struct wined3d_device *device)
         DestroyCursor(device->hardwareCursor);
     device->hardwareCursor = 0;
     device->cursor_bits_valid = FALSE;
+    device->cursor_src = NULL;
 
     wine_rb_destroy(&device->samplers, device_leftover_sampler, NULL);
     wine_rb_destroy(&device->rasterizer_states, device_leftover_rasterizer_state, NULL);
@@ -3835,6 +3836,8 @@ HRESULT CDECL wined3d_device_update_texture(struct wined3d_device *device,
 
     TRACE("device %p, src_texture %p, dst_texture %p.\n", device, src_texture, dst_texture);
 
+    InterlockedIncrement(&(&dst_texture->resource)->content_serial);
+
     /* Verify that the source and destination textures are non-NULL. */
     if (!src_texture || !dst_texture)
     {
@@ -4156,6 +4159,8 @@ void CDECL wined3d_device_context_copy_resource(struct wined3d_device_context *c
 
     TRACE("context %p, dst_resource %p, src_resource %p.\n", context, dst_resource, src_resource);
 
+    InterlockedIncrement(&dst_resource->content_serial);
+
     if (src_resource == dst_resource)
     {
         WARN("Source and destination are the same resource.\n");
@@ -4245,6 +4250,8 @@ HRESULT CDECL wined3d_device_context_copy_sub_resource_region(struct wined3d_dev
             "src_resource %p, src_sub_resource_idx %u, src_box %s, flags %#x.\n",
             context, dst_resource, dst_sub_resource_idx, dst_x, dst_y, dst_z,
             src_resource, src_sub_resource_idx, debug_box(src_box), flags);
+
+    InterlockedIncrement(&dst_resource->content_serial);
 
     if (flags)
         FIXME("Ignoring flags %#x.\n", flags);
@@ -4400,6 +4407,8 @@ void CDECL wined3d_device_context_update_sub_resource(struct wined3d_device_cont
     TRACE("context %p, resource %p, sub_resource_idx %u, box %s, data %p, row_pitch %u, depth_pitch %u, flags %#x.\n",
             context, resource, sub_resource_idx, debug_box(box), data, row_pitch, depth_pitch, flags);
 
+    InterlockedIncrement(&resource->content_serial);
+
     if (flags)
         FIXME("Ignoring flags %#x.\n", flags);
 
@@ -4497,6 +4506,8 @@ HRESULT CDECL wined3d_device_context_clear_rendertarget_view(struct wined3d_devi
 
     TRACE("context %p, view %p, rect %s, flags %#x, color %s, depth %.8e, stencil %u.\n",
             context, view, wine_dbgstr_rect(rect), flags, debug_color(color), depth, stencil);
+
+    if (view) InterlockedIncrement(&view->resource->content_serial);
 
     if (!flags)
         return WINED3D_OK;
@@ -4621,6 +4632,9 @@ HRESULT CDECL wined3d_device_context_map(struct wined3d_device_context *context,
     }
 
     flags = sanitise_map_flags(resource, flags);
+
+    if (flags & WINED3D_MAP_WRITE)
+        InterlockedIncrement(&resource->content_serial);
 
     if (FAILED(wined3d_resource_get_sub_resource_desc(resource, sub_resource_idx, &desc)))
         return E_INVALIDARG;
@@ -4793,6 +4807,22 @@ HRESULT CDECL wined3d_device_set_cursor_properties(struct wined3d_device *device
             || texture->resource.type != WINED3D_RTYPE_TEXTURE_2D)
         return WINED3DERR_INVALIDCALL;
 
+    /* Reading the image back means waiting for the command stream, and with a vsynced present
+     * queued that is up to a whole frame of busy waiting on the application's thread. Heroes VI
+     * sets its cursor from the window procedure on mouse moves, so every move cost a frame and
+     * its timer driven rendering starved. When the same, unmodified texture is set again there
+     * is nothing to read. */
+    if (device->cursor_src == texture && device->cursor_src_idx == sub_resource_idx
+            && device->cursor_src_serial == texture->resource.content_serial
+            && device->xHotSpot == x_hotspot && device->yHotSpot == y_hotspot
+            && device->cursor_texture
+            && !(texture->resource.bind_flags & (WINED3D_BIND_RENDER_TARGET | WINED3D_BIND_DEPTH_STENCIL)))
+    {
+        TRACE("Cursor source is unchanged.\n");
+        return WINED3D_OK;
+    }
+    device->cursor_src = NULL;
+
     /* Some applications set the same cursor image every frame (Might & Magic Heroes VI does it
      * 20-30 times per second). Recreating the cursor texture and the system cursor each time is
      * expensive, in particular with winemac.drv, which rebuilds the cursor image from scratch and
@@ -4820,12 +4850,16 @@ HRESULT CDECL wined3d_device_set_cursor_properties(struct wined3d_device *device
         if (same)
         {
             TRACE("Cursor image is unchanged.\n");
+            device->cursor_src = texture;
+            device->cursor_src_idx = sub_resource_idx;
+            device->cursor_src_serial = texture->resource.content_serial;
             return WINED3D_OK;
         }
     }
     else
     {
         device->cursor_bits_valid = FALSE;
+        device->cursor_src = NULL;
     }
 
     if (device->cursor_texture)
@@ -4898,6 +4932,10 @@ HRESULT CDECL wined3d_device_set_cursor_properties(struct wined3d_device *device
         free(mask_bits);
     }
 
+    device->cursor_src = texture;
+    device->cursor_src_idx = sub_resource_idx;
+    device->cursor_src_serial = texture->resource.content_serial;
+
     TRACE("New cursor dimensions are %ux%u.\n", cursor_width, cursor_height);
     device->cursorWidth = cursor_width;
     device->cursorHeight = cursor_height;
@@ -4933,6 +4971,7 @@ void CDECL wined3d_device_set_cursor_position(struct wined3d_device *device,
             DestroyCursor( device->hardwareCursor );
             device->hardwareCursor = 0;
             device->cursor_bits_valid = FALSE;
+            device->cursor_src = NULL;
         }
     }
 }

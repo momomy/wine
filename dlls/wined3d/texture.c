@@ -1583,6 +1583,8 @@ HRESULT CDECL wined3d_device_context_blt(struct wined3d_device_context *context,
             context, dst_texture, dst_sub_resource_idx, wine_dbgstr_rect(dst_rect), src_texture,
             src_sub_resource_idx, wine_dbgstr_rect(src_rect), flags, fx, debug_d3dtexturefiltertype(filter));
 
+    InterlockedIncrement(&(&dst_texture->resource)->content_serial);
+
     if (!wined3d_texture_validate_sub_resource_idx(dst_texture, dst_sub_resource_idx)
             || dst_texture->resource.type != WINED3D_RTYPE_TEXTURE_2D)
         return WINED3DERR_INVALIDCALL;

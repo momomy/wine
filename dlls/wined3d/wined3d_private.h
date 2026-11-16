@@ -3098,6 +3098,10 @@ struct wined3d_device
     /* pixels of the 32x32 image hardwareCursor was created from, to skip identical updates */
     DWORD                   cursor_bits[32 * 32];
     BOOL                    cursor_bits_valid;
+    /* source of the current cursor image; only compared, never dereferenced */
+    const struct wined3d_texture *cursor_src;
+    unsigned int            cursor_src_idx;
+    LONG                    cursor_src_serial;
 
     /* The Wine logo texture */
     struct wined3d_texture *logo_texture;
@@ -3280,6 +3284,7 @@ struct wined3d_resource
     LONG ref;
     LONG bind_count;
     LONG map_count;
+    LONG content_serial; /* bumped whenever the application may have changed the contents */
     ULONG access_time;
     struct wined3d_device *device;
     enum wined3d_resource_type type;
