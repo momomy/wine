@@ -191,9 +191,10 @@ static void update_report(struct gcpad_device *impl, const struct gcpad_state *s
     UINT i;
 
     hid_device_set_abs_axis(iface, 0, state->lx);
-    hid_device_set_abs_axis(iface, 1, -state->ly - 1); /* match XUSB / GIP protocol */
+    /* XUSB / GIP have y positive up, like GameController (the SDL backend has to flip SDL's values) */
+    hid_device_set_abs_axis(iface, 1, state->ly);
     hid_device_set_abs_axis(iface, 2, state->rx);
-    hid_device_set_abs_axis(iface, 3, -state->ry - 1);
+    hid_device_set_abs_axis(iface, 3, state->ry);
     hid_device_set_abs_axis(iface, 4, state->lt);
     hid_device_set_abs_axis(iface, 5, state->rt);
 
