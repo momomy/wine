@@ -48,8 +48,9 @@ BOOL WINAPI GetUserNameA( LPSTR name, LPDWORD size )
     DWORD len = GetEnvironmentVariableA( "WINEUSERNAME", name, *size );
     BOOL ret;
 
-    /* CrossOver Hack 12735: Use a consistent username */
-    if (!getenv( "CX_REPORT_REAL_USERNAME" ))
+    /* CrossOver Hack 12735 reported "crossover" unless CX_REPORT_REAL_USERNAME was set. The variable is
+     * lost when a launcher builds its own environment, splitting the profile, so the real name is the default. */
+    if (getenv( "CX_REPORT_FAKE_USERNAME" ))
     {
         len = sizeof("crossover");
         if ((ret = (len <= *size))) strcpy( name, "crossover" );
@@ -73,8 +74,9 @@ BOOL WINAPI GetUserNameW( LPWSTR name, LPDWORD size )
     DWORD len = GetEnvironmentVariableW( L"WINEUSERNAME", name, *size );
     BOOL ret;
 
-    /* CrossOver Hack 12735: Use a consistent username */
-    if (!getenv( "CX_REPORT_REAL_USERNAME" ))
+    /* CrossOver Hack 12735 reported "crossover" unless CX_REPORT_REAL_USERNAME was set. The variable is
+     * lost when a launcher builds its own environment, splitting the profile, so the real name is the default. */
+    if (getenv( "CX_REPORT_FAKE_USERNAME" ))
     {
         len = ARRAY_SIZE( L"crossover" );
         if ((ret = (len <= *size))) wcscpy( name, L"crossover" );
