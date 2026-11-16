@@ -5253,7 +5253,7 @@ void loader_init( CONTEXT *context, void **entry )
 
     RtlLeaveCriticalSection( &loader_section );
 
-    /* D3DMetal reports EDR screens as HDR10; user32 patches that before the application can ask (see
+    /* D3DMetal reports EDR screens as HDR10; with WINE_HDR=0 user32 patches that before the application can ask (see
      * dlls/user32/d3dmetal_hdr.c). It has to happen here: after the loader lock is released and before
      * the entry point runs. */
     if (process_started)

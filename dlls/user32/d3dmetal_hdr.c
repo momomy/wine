@@ -5,8 +5,9 @@
  * HDR10. Some games then render in HDR unconditionally and offer no way to
  * turn it off (The Witcher 3 5.0 looks blown out). D3DMetal is a binary, so
  * its IDXGIOutput6::GetDesc1() and IDXGISwapChain3::CheckColorSpaceSupport()
- * are patched in place when the application loads dxgi.dll. WINE_HDR=1 leaves
- * them alone.
+ * can be patched in place when the application loads dxgi.dll. This is opt-in:
+ * set WINE_HDR=0 to report SDR. By default the output is left as D3DMetal
+ * reports it.
  *
  * This lives in user32 because it has to run before the application queries
  * the output: user32 is loaded before dxgi by practically every game, the
@@ -178,7 +179,8 @@ static BOOL hdr_hook_enabled(void)
     WCHAR buffer[16];
 
     if (!GetEnvironmentVariableW(L"CX_ACTIVE_GRAPHICS_BACKEND", buffer, ARRAY_SIZE(buffer)) || wcsicmp(buffer, L"d3dmetal")) return FALSE;
-    if (GetEnvironmentVariableW(L"WINE_HDR", buffer, ARRAY_SIZE(buffer)) && buffer[0] != '0') return FALSE;
+    /* HDR is left alone by default; WINE_HDR=0 asks for SDR */
+    if (!GetEnvironmentVariableW(L"WINE_HDR", buffer, ARRAY_SIZE(buffer)) || buffer[0] != '0') return FALSE;
     return TRUE;
 }
 
