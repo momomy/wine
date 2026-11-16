@@ -93,6 +93,7 @@
 #include "msync.h"
 #include "wine/list.h"
 #include "ntsyscalls.h"
+#include "wine/asm.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(module);
@@ -141,12 +142,162 @@ static void stub_syscall( const char *name )
 #define SYSCALL_STUB(name) static void name(void) { stub_syscall( #name ); }
 ALL_SYSCALL_STUBS
 
+/* WhiskyWine: backport of upstream f43402cde33 "ntdll: Add syscall wrappers to work around ABI breakages".
+ * Clang on x86-64 assumes that BOOLEAN/char parameters are extended by the caller, contrary to the ABI,
+ * cf. https://github.com/llvm/llvm-project/issues/12579. Without this NtQueryDirectoryObject sees
+ * garbage in "restart" and GetLogicalDrives() loops forever (Steam hangs at startup). */
+#if defined(__x86_64__) && defined(__clang__)
+
+#define WRAP_FUNC(name,code) \
+    extern NTSTATUS wrap_##name(void); \
+    __ASM_GLOBAL_FUNC( wrap_##name, code "jmp " __ASM_NAME(#name) )
+#define ARG1 "movzbl %dil,%edi\n\t"
+#define ARG2 "movzbl %sil,%esi\n\t"
+#define ARG3 "movzbl %dl,%edx\n\t"
+#define ARG4 "movzbl %cl,%ecx\n\t"
+#define ARG5 "movzbl %r8b,%r8d\n\t"
+#define ARG6 "movzbl %r9b,%r9d\n\t"
+#define ARG7 ARGn(7)
+#define ARG8 ARGn(8)
+#define ARGn(n) "andq $0xff,(" #n "-6)*8(%rsp)\n\t"
+
+WRAP_FUNC( NtAccessCheckByTypeAndAuditAlarm, ARGn(13) )
+WRAP_FUNC( NtLockFile, ARGn(9) ARGn(10) )
+WRAP_FUNC( NtNotifyChangeDirectoryFile, ARGn(9) )
+WRAP_FUNC( NtNotifyChangeKey, ARG7 ARGn(10) )
+WRAP_FUNC( NtNotifyChangeMultipleKeys, ARGn(9) ARGn(12) )
+WRAP_FUNC( NtQueryDirectoryFile, ARGn(9) ARGn(11) )
+WRAP_FUNC( NtQueryEaFile, ARG5 ARGn(9) )
+
+#define NtAccessCheckByTypeAndAuditAlarm wrap_NtAccessCheckByTypeAndAuditAlarm
+#define NtLockFile wrap_NtLockFile
+#define NtNotifyChangeDirectoryFile wrap_NtNotifyChangeDirectoryFile
+#define NtNotifyChangeKey wrap_NtNotifyChangeKey
+#define NtNotifyChangeMultipleKeys wrap_NtNotifyChangeMultipleKeys
+#define NtQueryDirectoryFile wrap_NtQueryDirectoryFile
+#define NtQueryEaFile wrap_NtQueryEaFile
+
+
+WRAP_FUNC( NtAcceptConnectPort, ARG4 )
+WRAP_FUNC( NtAccessCheckAndAuditAlarm, ARG8 )
+WRAP_FUNC( NtAdjustGroupsToken, ARG2 )
+WRAP_FUNC( NtAdjustPrivilegesToken, ARG2 )
+WRAP_FUNC( NtCloseObjectAuditAlarm, ARG3 )
+WRAP_FUNC( NtCommitTransaction, ARG2 )
+WRAP_FUNC( NtContinue, ARG2 )
+WRAP_FUNC( NtCreateEvent, ARG5 )
+WRAP_FUNC( NtCreateMutant, ARG4 )
+/* WRAP_FUNC( NtCreateProcess, ARG5 ) */
+WRAP_FUNC( NtCreateThread, ARG8 )
+WRAP_FUNC( NtDelayExecution, ARG1 )
+WRAP_FUNC( NtDuplicateToken, ARG4 )
+WRAP_FUNC( NtInitiatePowerAction, ARG4 )
+WRAP_FUNC( NtOpenThreadToken, ARG3 )
+WRAP_FUNC( NtOpenThreadTokenEx, ARG3 )
+/* WRAP_FUNC( NtPrivilegeObjectAuditAlarm, ARG6 ) */
+/* WRAP_FUNC( NtPrivilegedServiceAuditAlarm, ARG5 ) */
+WRAP_FUNC( NtQueryDefaultLocale, ARG1 )
+WRAP_FUNC( NtQueryDirectoryObject, ARG4 ARG5 )
+WRAP_FUNC( NtReleaseKeyedEvent, ARG3 )
+WRAP_FUNC( NtRemoveIoCompletionEx, ARG6 )
+WRAP_FUNC( NtRollbackTransaction, ARG2 )
+WRAP_FUNC( NtSetDebugFilterState, ARG3 )
+WRAP_FUNC( NtSetDefaultLocale, ARG1 )
+WRAP_FUNC( NtSetTimer, ARG5 )
+WRAP_FUNC( NtSetTimerResolution, ARG2 )
+WRAP_FUNC( NtSignalAndWaitForSingleObject, ARG3 )
+WRAP_FUNC( NtWaitForDebugEvent, ARG2 )
+WRAP_FUNC( NtWaitForKeyedEvent, ARG3 )
+WRAP_FUNC( NtWaitForMultipleObjects, ARG4 )
+WRAP_FUNC( NtWaitForSingleObject, ARG2 )
+
+#define NtAcceptConnectPort wrap_NtAcceptConnectPort
+#define NtAccessCheckAndAuditAlarm wrap_NtAccessCheckAndAuditAlarm
+#define NtAdjustGroupsToken wrap_NtAdjustGroupsToken
+#define NtAdjustPrivilegesToken wrap_NtAdjustPrivilegesToken
+#define NtCloseObjectAuditAlarm wrap_NtCloseObjectAuditAlarm
+#define NtCommitTransaction wrap_NtCommitTransaction
+#define NtContinue wrap_NtContinue
+#define NtCreateEvent wrap_NtCreateEvent
+#define NtCreateMutant wrap_NtCreateMutant
+#define NtCreateThread wrap_NtCreateThread
+#define NtDelayExecution wrap_NtDelayExecution
+#define NtDuplicateToken wrap_NtDuplicateToken
+#define NtInitiatePowerAction wrap_NtInitiatePowerAction
+#define NtOpenThreadToken wrap_NtOpenThreadToken
+#define NtOpenThreadTokenEx wrap_NtOpenThreadTokenEx
+#define NtQueryDefaultLocale wrap_NtQueryDefaultLocale
+#define NtQueryDirectoryObject wrap_NtQueryDirectoryObject
+#define NtReleaseKeyedEvent wrap_NtReleaseKeyedEvent
+#define NtRemoveIoCompletionEx wrap_NtRemoveIoCompletionEx
+#define NtRollbackTransaction wrap_NtRollbackTransaction
+#define NtSetDebugFilterState wrap_NtSetDebugFilterState
+#define NtSetDefaultLocale wrap_NtSetDefaultLocale
+#define NtSetTimer wrap_NtSetTimer
+#define NtSetTimerResolution wrap_NtSetTimerResolution
+#define NtSignalAndWaitForSingleObject wrap_NtSignalAndWaitForSingleObject
+#define NtWaitForDebugEvent wrap_NtWaitForDebugEvent
+#define NtWaitForKeyedEvent wrap_NtWaitForKeyedEvent
+#define NtWaitForMultipleObjects wrap_NtWaitForMultipleObjects
+#define NtWaitForSingleObject wrap_NtWaitForSingleObject
+
+#undef ARG1
+#undef ARG2
+#undef ARG3
+#undef ARG4
+#undef ARG5
+#undef ARG6
+#undef ARG7
+#undef ARG8
+#undef ARGn
+#undef WRAP_FUNC
+
+#endif
+
 static void * const syscalls[] =
 {
 #define SYSCALL_ENTRY(id,name,args) name,
     ALL_SYSCALLS
 #undef SYSCALL_ENTRY
 };
+#if defined(__x86_64__) && defined(__clang__)
+#undef NtAccessCheckByTypeAndAuditAlarm
+#undef NtLockFile
+#undef NtNotifyChangeDirectoryFile
+#undef NtNotifyChangeKey
+#undef NtNotifyChangeMultipleKeys
+#undef NtQueryDirectoryFile
+#undef NtQueryEaFile
+#undef NtAcceptConnectPort
+#undef NtAccessCheckAndAuditAlarm
+#undef NtAdjustGroupsToken
+#undef NtAdjustPrivilegesToken
+#undef NtCloseObjectAuditAlarm
+#undef NtCommitTransaction
+#undef NtContinue
+#undef NtCreateEvent
+#undef NtCreateMutant
+#undef NtCreateThread
+#undef NtDelayExecution
+#undef NtDuplicateToken
+#undef NtInitiatePowerAction
+#undef NtOpenThreadToken
+#undef NtOpenThreadTokenEx
+#undef NtQueryDefaultLocale
+#undef NtQueryDirectoryObject
+#undef NtReleaseKeyedEvent
+#undef NtRemoveIoCompletionEx
+#undef NtRollbackTransaction
+#undef NtSetDebugFilterState
+#undef NtSetDefaultLocale
+#undef NtSetTimer
+#undef NtSetTimerResolution
+#undef NtSignalAndWaitForSingleObject
+#undef NtWaitForDebugEvent
+#undef NtWaitForKeyedEvent
+#undef NtWaitForMultipleObjects
+#undef NtWaitForSingleObject
+#endif
 
 static BYTE syscall_args[ARRAY_SIZE(syscalls)] =
 {
@@ -387,12 +538,24 @@ void prepend_dll_path(const char *path)
 static void set_dll_path(void)
 {
     char *p, *path = getenv( "WINEDLLPATH" );
+    /* WhiskyWine: directories searched before the builtin dll dir, so that an external
+     * Direct3D implementation (Apple GPTK / D3DMetal) can replace d3d11/d3d12/dxgi per process
+     * without touching the installed runtime. */
+    char *prepend = getenv( "WINEDLLPATH_PREPEND" );
     int i, count = 0;
 
     if (path) for (p = path, count = 1; *p; p++) if (*p == ':') count++;
+    if (prepend) for (p = prepend, count++; *p; p++) if (*p == ':') count++;
 
     dll_paths = malloc( (count + 2) * sizeof(*dll_paths) );
     count = 0;
+
+    if (prepend)
+    {
+        prepend = strdup(prepend);
+        for (p = strtok( prepend, ":" ); p; p = strtok( NULL, ":" )) dll_paths[count++] = strdup( p );
+        free( prepend );
+    }
 
     if (!build_dir) dll_paths[count++] = dll_dir;
 
