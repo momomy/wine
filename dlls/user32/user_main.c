@@ -244,7 +244,11 @@ BOOL WINAPI DllMain( HINSTANCE inst, DWORD reason, LPVOID reserved )
         user32_module = inst;
         ret = process_attach();
         if(ret)
+        {
+            extern void d3dmetal_hdr_init(void);
             imm32_module = LoadLibraryW(L"imm32.dll");
+            d3dmetal_hdr_init();
+        }
         break;
     case DLL_THREAD_DETACH:
         thread_detach();

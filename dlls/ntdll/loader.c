@@ -5073,6 +5073,7 @@ static BOOL is_macos(void)
  */
 void loader_init( CONTEXT *context, void **entry )
 {
+    BOOL process_started = FALSE;
     static int attach_done;
     NTSTATUS status;
     ULONG_PTR cookie, port = 0;
@@ -5240,6 +5241,7 @@ void loader_init( CONTEXT *context, void **entry )
 
         NtQueryInformationProcess( GetCurrentProcess(), ProcessDebugPort, &port, sizeof(port), NULL );
         if (port) process_breakpoint();
+        process_started = TRUE;
     }
     else
     {
@@ -5250,6 +5252,22 @@ void loader_init( CONTEXT *context, void **entry )
     }
 
     RtlLeaveCriticalSection( &loader_section );
+
+    /* D3DMetal reports EDR screens as HDR10; user32 patches that before the application can ask (see
+     * dlls/user32/d3dmetal_hdr.c). It has to happen here: after the loader lock is released and before
+     * the entry point runs. */
+    if (process_started)
+    {
+        static const UNICODE_STRING user32_name = RTL_CONSTANT_STRING( L"user32.dll" );
+        ANSI_STRING func_name;
+        void (CDECL *hook)(void);
+        HMODULE module;
+
+        RtlInitAnsiString( &func_name, "__wine_d3dmetal_hdr_sync" );
+        if (!LdrGetDllHandle( NULL, 0, &user32_name, &module ) &&
+            !LdrGetProcedureAddress( module, &func_name, 0, (void **)&hook ))
+            hook();
+    }
 }
 
 

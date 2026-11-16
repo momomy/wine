@@ -11,6 +11,7 @@ SOURCES = \
 	clipboard.c \
 	combo.c \
 	cursoricon.c \
+	d3dmetal_hdr.c \
 	dde_client.c \
 	dde_misc.c \
 	dde_server.c \
