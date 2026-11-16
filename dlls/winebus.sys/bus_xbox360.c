@@ -623,10 +623,12 @@ NTSTATUS xbox_bus_init(void *args)
 
     TRACE("args %p\n", args);
 
-    /* In Sequoia and later, GameController.framework supports wired XBOX 360 controllers */
+    /* In Sequoia and later, GameController.framework supports wired XBOX 360 controllers.
+     * It only delivers input to the frontmost application, so winemac.drv reads them. */
     if (sequoia_or_later())
     {
-        TRACE("disabled: running on macOS Sequoia or later\n");
+        TRACE("running on macOS Sequoia or later, using GameController\n");
+        gcpad_bus_init();
         return STATUS_SUCCESS;
     }
 
@@ -663,15 +665,10 @@ NTSTATUS xbox_bus_wait(void *args)
     struct bus_event *result = args;
     CFRunLoopRunResult ret;
 
+    if (sequoia_or_later()) return gcpad_bus_wait(result);
+
     /* cleanup previously returned event */
     bus_event_cleanup(result);
-
-    /* In Sequoia and later, GameController.framework supports wired XBOX 360 controllers */
-    if (sequoia_or_later())
-    {
-        TRACE("disabled: running on macOS Sequoia or later\n");
-        return STATUS_SUCCESS;
-    }
 
     do
     {
@@ -688,6 +685,7 @@ NTSTATUS xbox_bus_wait(void *args)
 
 NTSTATUS xbox_bus_stop(void *args)
 {
+    gcpad_bus_stop();
     if (!run_loop) return STATUS_SUCCESS;
 
     CFRunLoopStop(run_loop);

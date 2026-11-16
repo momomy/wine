@@ -306,6 +306,12 @@ static void handle_DeviceMatchingCallback(void *context, IOReturn result, void *
         return;
     }
 
+    if (gcpad_handles_device(desc.vid, desc.pid))
+    {
+        TRACE("Ignoring HID device %p (vid %04x, pid %04x): handled through GameController\n", IOHIDDevice, desc.vid, desc.pid);
+        return;
+    }
+
     if (IOHIDDeviceOpen(IOHIDDevice, 0) != kIOReturnSuccess)
     {
         ERR("Failed to open HID device %p (vid %04x, pid %04x)\n", IOHIDDevice, desc.vid, desc.pid);

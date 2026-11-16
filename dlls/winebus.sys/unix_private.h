@@ -238,6 +238,11 @@ extern NTSTATUS xbox_bus_init(void *);
 extern NTSTATUS xbox_bus_wait(void *);
 extern NTSTATUS xbox_bus_stop(void *);
 
+extern NTSTATUS gcpad_bus_init(void);
+extern NTSTATUS gcpad_bus_wait(struct bus_event *result);
+extern NTSTATUS gcpad_bus_stop(void);
+extern BOOL gcpad_handles_device(WORD vid, WORD pid);
+
 extern void bus_event_cleanup(struct bus_event *event);
 extern void bus_event_queue_destroy(struct list *queue);
 extern BOOL bus_event_queue_device_removed(struct list *queue, struct unix_device *device);

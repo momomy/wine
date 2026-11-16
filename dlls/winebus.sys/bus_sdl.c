@@ -975,6 +975,14 @@ static void sdl_add_device(unsigned int index)
         desc.version = 0;
     }
 
+    if (gcpad_handles_device(desc.vid, desc.pid))
+    {
+        TRACE("ignoring %04x:%04x, handled through GameController\n", desc.vid, desc.pid);
+        if (controller) pSDL_GameControllerClose(controller);
+        pSDL_JoystickClose(joystick);
+        return;
+    }
+
     if (pSDL_JoystickGetSerial && (sdl_serial = pSDL_JoystickGetSerial(joystick)))
         ntdll_umbstowcs(sdl_serial, strlen(sdl_serial) + 1, desc.serialnumber, ARRAY_SIZE(desc.serialnumber));
 

@@ -208,6 +208,11 @@ static NSString* WineLocalizedString(unsigned int stringID)
 
             if ([NSApp isActive])
                 [self applicationDidBecomeActive:nil];
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+                extern void macdrv_gcpad_init(void);
+                macdrv_gcpad_init();
+            });
         }
         return self;
     }
