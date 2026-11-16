@@ -7,11 +7,11 @@
 #   winetricks, verbs.txt
 #   WhiskyWineVersion.plist
 #
-# GPTK(D3DMetal): GPTK_DIR(기본 <BUILD_ROOT>/../gptk/GPTK/redist)가 있으면 넣는다.
+# GPTK(D3DMetal): GPTK_DIR(기본 <BUILD_ROOT>/../gptk3/redist, macos/fetch-gptk.sh 가 만든다)가 있으면 넣는다.
 #   Wine/lib/external/{D3DMetal.framework,libd3dshared.dylib}
-#   Wine/lib/gptk/wine/{x86_64-unix,x86_64-windows}/{d3d10,d3d11,d3d12,dxgi,atidxx64}
+#   Wine/lib/gptk/wine/{x86_64-unix,x86_64-windows}/{d3d10,d3d11,d3d12,dxgi,atidxx64,nvapi64,nvngx,nvngx-on-metalfx}
 # Wine 내장 DLL 을 덮어쓰지 않는다. 실행할 때 WINEDLLPATH_PREPEND 로 앞에 끼워 넣는다(docs/d3dmetal-port.md).
-# 애플 라이선스상 비상업적 배포만 허용되므로 공개 릴리스에 넣을지는 따로 판단한다(GPTK_DIR=none 으로 제외).
+# GPTK_DIR=none 으로 제외할 수 있다.
 #
 # 사용법: macos/package.sh [BUILD_ROOT]
 set -euo pipefail
@@ -51,13 +51,13 @@ cp -a "$DEPS/share/wine/mono" "$DEPS/share/wine/gecko" "$OUT/Wine/share/wine/"
 
 cp -a "$SRC/macos/DXVK" "$OUT/DXVK"
 
-GPTK_DIR="${GPTK_DIR:-${BUILD_ROOT:h}/gptk/GPTK/redist}"
+GPTK_DIR="${GPTK_DIR:-${BUILD_ROOT:h}/gptk3/redist}"
 if [[ -d "$GPTK_DIR/lib/external/D3DMetal.framework" ]]; then
   echo "==> GPTK 포함: $GPTK_DIR"
   mkdir -p "$OUT/Wine/lib/external" "$OUT/Wine/lib/gptk"
   cp -a "$GPTK_DIR/lib/external/." "$OUT/Wine/lib/external/"
   cp -a "$GPTK_DIR/lib/wine" "$OUT/Wine/lib/gptk/wine"
-  # d3d11.so 등은 D3DMetal.framework 를 ../../external 에서 찾는다
+  # GPTK 3.0 의 *.so 는 ../../external/libd3dshared.dylib 심볼릭 링크다(2.1 은 rpath 로 같은 곳을 찾는다)
   ln -s ../external "$OUT/Wine/lib/gptk/external"
 fi
 cp -a "$SRC/macos/WhiskyWineVersion.plist" "$OUT/"
