@@ -3095,6 +3095,9 @@ struct wined3d_device
     UINT                    cursorWidth, cursorHeight;
     struct wined3d_texture *cursor_texture;
     HCURSOR                 hardwareCursor;
+    /* pixels of the 32x32 image hardwareCursor was created from, to skip identical updates */
+    DWORD                   cursor_bits[32 * 32];
+    BOOL                    cursor_bits_valid;
 
     /* The Wine logo texture */
     struct wined3d_texture *logo_texture;

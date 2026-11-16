@@ -235,6 +235,7 @@ void wined3d_device_cleanup(struct wined3d_device *device)
     if (device->hardwareCursor)
         DestroyCursor(device->hardwareCursor);
     device->hardwareCursor = 0;
+    device->cursor_bits_valid = FALSE;
 
     wine_rb_destroy(&device->samplers, device_leftover_sampler, NULL);
     wine_rb_destroy(&device->rasterizer_states, device_leftover_rasterizer_state, NULL);
@@ -4792,6 +4793,41 @@ HRESULT CDECL wined3d_device_set_cursor_properties(struct wined3d_device *device
             || texture->resource.type != WINED3D_RTYPE_TEXTURE_2D)
         return WINED3DERR_INVALIDCALL;
 
+    /* Some applications set the same cursor image every frame (Might & Magic Heroes VI does it
+     * 20-30 times per second). Recreating the cursor texture and the system cursor each time is
+     * expensive, in particular with winemac.drv, which rebuilds the cursor image from scratch and
+     * hands it to the main thread: rendering stalls while the mouse moves. Skip identical updates. */
+    if (texture->resource.format->id == WINED3DFMT_B8G8R8A8_UNORM
+            && wined3d_texture_get_level_width(texture, texture_level) == 32
+            && wined3d_texture_get_level_height(texture, texture_level) == 32
+            && SUCCEEDED(wined3d_resource_map(&texture->resource, sub_resource_idx, &map_desc, NULL,
+            WINED3D_MAP_NO_DIRTY_UPDATE | WINED3D_MAP_READ)))
+    {
+        DWORD bits[32 * 32];
+        unsigned int y;
+        BOOL same;
+
+        for (y = 0; y < 32; ++y)
+            memcpy(&bits[y * 32], (const BYTE *)map_desc.data + y * map_desc.row_pitch, 32 * sizeof(DWORD));
+        wined3d_resource_unmap(&texture->resource, sub_resource_idx);
+
+        same = device->cursor_bits_valid && device->hardwareCursor && device->cursor_texture
+                && device->xHotSpot == x_hotspot && device->yHotSpot == y_hotspot
+                && device->cursorWidth == 32 && device->cursorHeight == 32
+                && !memcmp(bits, device->cursor_bits, sizeof(bits));
+        memcpy(device->cursor_bits, bits, sizeof(bits));
+        device->cursor_bits_valid = TRUE;
+        if (same)
+        {
+            TRACE("Cursor image is unchanged.\n");
+            return WINED3D_OK;
+        }
+    }
+    else
+    {
+        device->cursor_bits_valid = FALSE;
+    }
+
     if (device->cursor_texture)
     {
         wined3d_texture_decref(device->cursor_texture);
@@ -4896,6 +4932,7 @@ void CDECL wined3d_device_set_cursor_position(struct wined3d_device *device,
             if (device->bCursorVisible) SetCursor( NULL );
             DestroyCursor( device->hardwareCursor );
             device->hardwareCursor = 0;
+            device->cursor_bits_valid = FALSE;
         }
     }
 }
