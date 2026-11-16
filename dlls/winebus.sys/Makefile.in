@@ -8,6 +8,7 @@ EXTRADLLFLAGS = -Wl,--subsystem,native
 
 SOURCES = \
 	bus_gcpad.c \
+	bus_gcpad_gip.c \
 	bus_iohid.c \
 	bus_sdl.c \
 	bus_udev.c \

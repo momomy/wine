@@ -90,9 +90,14 @@ static void gcpad_device_stop(struct unix_device *iface)
     pthread_mutex_unlock(&gcpad_cs);
 }
 
-static void set_rumble(struct gcpad_device *impl, UINT duration_ms, USHORT low, USHORT high)
+extern int gip_rumble_send(unsigned int index, uint16_t low, uint16_t high, uint16_t left_trigger, uint16_t right_trigger);
+
+static void set_rumble(struct gcpad_device *impl, UINT duration_ms, USHORT low, USHORT high, USHORT left, USHORT right)
 {
     struct gcpad_state *pad = &shm->pads[impl->index];
+
+    /* wired controllers: CoreHaptics does not reach them, talk to the driver directly */
+    if (gip_rumble_send(impl->index, low, high, left, right)) return;
 
     pad->rumble_low = low;
     pad->rumble_high = high;
@@ -110,7 +115,7 @@ static NTSTATUS gcpad_device_haptics_start(struct unix_device *iface, UINT durat
     TRACE("iface %p, duration_ms %u, rumble_intensity %u, buzz_intensity %u, left_intensity %u, right_intensity %u.\n",
           iface, duration_ms, rumble_intensity, buzz_intensity, left_intensity, right_intensity);
 
-    set_rumble(impl, duration_ms, rumble_intensity, buzz_intensity);
+    set_rumble(impl, duration_ms, rumble_intensity, buzz_intensity, left_intensity, right_intensity);
     return STATUS_SUCCESS;
 }
 
@@ -120,7 +125,7 @@ static NTSTATUS gcpad_device_haptics_stop(struct unix_device *iface)
 
     TRACE("iface %p.\n", iface);
 
-    set_rumble(impl, 0, 0, 0);
+    set_rumble(impl, 0, 0, 0, 0, 0);
     return STATUS_SUCCESS;
 }
 
