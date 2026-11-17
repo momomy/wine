@@ -1488,6 +1488,22 @@ static void vk_blitter_clear(struct wined3d_blitter *blitter, struct wined3d_dev
             clear_rects, draw_rect, next_flags, colour, depth, stencil);
 }
 
+/* A fixup that only replaces channels with constants (e.g. "XYZ1" for X8R8G8B8, which is stored as
+ * B8G8R8A8) does not change what has to be stored: the replaced channel is never read back from the image.
+ * Copying into such an image from one with the same Vulkan format and no fixup of its own is exact.
+ * Without this, the A8R8G8B8 -> X8R8G8B8 StretchRect() to the back buffer that some Direct3D 9 games do
+ * every frame fell back to the CPU blitter: a full-frame GPU readback with synchronous waits. */
+static bool vk_fixup_only_drops_channels(struct color_fixup_desc fixup)
+{
+    if (is_scaling_fixup(fixup))
+        return false;
+
+    return (fixup.x_source == CHANNEL_SOURCE_X || fixup.x_source <= CHANNEL_SOURCE_ONE)
+            && (fixup.y_source == CHANNEL_SOURCE_Y || fixup.y_source <= CHANNEL_SOURCE_ONE)
+            && (fixup.z_source == CHANNEL_SOURCE_Z || fixup.z_source <= CHANNEL_SOURCE_ONE)
+            && (fixup.w_source == CHANNEL_SOURCE_W || fixup.w_source <= CHANNEL_SOURCE_ONE);
+}
+
 static bool vk_blitter_blit_supported(enum wined3d_blit_op op, const struct wined3d_context *context,
         const struct wined3d_resource *src_resource, const RECT *src_rect,
         const struct wined3d_resource *dst_resource, const RECT *dst_rect, const struct wined3d_format *resolve_format)
@@ -1509,7 +1525,10 @@ static bool vk_blitter_blit_supported(enum wined3d_blit_op op, const struct wine
 
     if (dst_format->id != src_format->id)
     {
-        if (!is_identity_fixup(dst_format->color_fixup))
+        if (!is_identity_fixup(dst_format->color_fixup)
+                && !(wined3d_format_vk(src_format)->vk_format == wined3d_format_vk(dst_format)->vk_format
+                        && is_identity_fixup(src_format->color_fixup)
+                        && vk_fixup_only_drops_channels(dst_format->color_fixup)))
         {
             TRACE("Destination fixups are not supported.\n");
             return false;

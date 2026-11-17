@@ -27,6 +27,7 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d);
 
+
 VkCompareOp vk_compare_op_from_wined3d(enum wined3d_cmp_func op)
 {
     switch (op)
@@ -2685,6 +2686,24 @@ static VkFormat vk_format_from_component_type(enum wined3d_component_type compon
     return VK_FORMAT_UNDEFINED;
 }
 
+/* Direct3D 8/9 shaders read every vertex attribute as float: the integer declaration types (D3DDECLTYPE_UBYTE4,
+ * SHORT2, SHORT4) are converted to float, not reinterpreted. Vulkan has the scaled formats for exactly that.
+ * Passing the integer format to a float input happens to work on most drivers, but MoltenVK refuses to build
+ * the pipeline ("Vertex attribute type mismatch between host and shader"), which dropped every skinned draw. */
+static VkFormat wined3d_vk_scaled_vertex_format(VkFormat format)
+{
+    switch (format)
+    {
+        case VK_FORMAT_R8G8B8A8_UINT:       return VK_FORMAT_R8G8B8A8_USCALED;
+        case VK_FORMAT_R8G8B8A8_SINT:       return VK_FORMAT_R8G8B8A8_SSCALED;
+        case VK_FORMAT_R16G16_UINT:         return VK_FORMAT_R16G16_USCALED;
+        case VK_FORMAT_R16G16_SINT:         return VK_FORMAT_R16G16_SSCALED;
+        case VK_FORMAT_R16G16B16A16_UINT:   return VK_FORMAT_R16G16B16A16_USCALED;
+        case VK_FORMAT_R16G16B16A16_SINT:   return VK_FORMAT_R16G16B16A16_SSCALED;
+        default:                            return format;
+    }
+}
+
 static bool wined3d_context_vk_update_graphics_pipeline_key(struct wined3d_context_vk *context_vk,
         const struct wined3d_state *state, VkPipelineLayout vk_pipeline_layout, uint32_t *null_buffer_binding)
 {
@@ -2746,6 +2765,9 @@ static bool wined3d_context_vk_update_graphics_pipeline_key(struct wined3d_conte
             a->location = i;
             a->binding = binding;
             a->format = wined3d_format_vk(e->format)->vk_format;
+            if (!state->shader[WINED3D_SHADER_TYPE_VERTEX]
+                    || state->shader[WINED3D_SHADER_TYPE_VERTEX]->reg_maps.shader_version.major < 4)
+                a->format = wined3d_vk_scaled_vertex_format(a->format);
             a->offset = (UINT_PTR)e->data.addr - state->streams[binding].offset;
 
             if (mask & (1u << binding))

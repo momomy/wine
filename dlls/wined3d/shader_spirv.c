@@ -378,7 +378,27 @@ static VkShaderModule shader_spirv_compile_shader(struct wined3d_context_vk *con
 
     if (ret < 0)
     {
-        ERR("Failed to compile shader, ret %d.\n", ret);
+        ERR("Failed to compile shader (type %#x, byte_code %p), ret %d.\n", shader_type, shader_desc->byte_code, ret);
+        if (source_type == VKD3D_SHADER_SOURCE_D3D_BYTECODE && shader_desc->byte_code)
+        {
+            /* Identify the shader: dump its first tokens, skipping comment blocks (CTAB etc.). */
+            const DWORD *token = shader_desc->byte_code;
+            char buffer[48 * 9 + 1], *out = buffer;
+            unsigned int count = 0;
+
+            out += sprintf(out, "%08x", (unsigned int)*token++);
+            while (count < 47 && *token != 0x0000ffff)
+            {
+                if ((*token & 0xffff) == 0xfffe)
+                {
+                    token += 1 + ((*token >> 16) & 0x7fff);
+                    continue;
+                }
+                out += sprintf(out, " %08x", (unsigned int)*token++);
+                ++count;
+            }
+            ERR("Shader tokens: %s\n", buffer);
+        }
         return VK_NULL_HANDLE;
     }
 
