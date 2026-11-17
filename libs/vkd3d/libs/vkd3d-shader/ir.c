@@ -5867,6 +5867,23 @@ static enum vkd3d_result io_normaliser_init_misctype(struct vsir_program_iterato
     return VKD3D_OK;
 }
 
+/* The vPos / vFace loads inserted by io_normaliser_init_misctype() already address their signature element.
+ * Normalising them a second time looks that element index up as a register index, which either fails
+ * ("Unable to resolve I/O register") or silently picks another input. */
+static bool io_normaliser_is_misctype_load(const struct vkd3d_shader_instruction *ins,
+        const struct io_normaliser *normaliser)
+{
+    unsigned int ssa_idx;
+
+    if (ins->dst_count != 1 || !ins->src_count)
+        return false;
+    if (ins->dst[0].reg.type != VSIR_REGISTER_SSA || ins->src[0].reg.type != VSIR_REGISTER_INPUT)
+        return false;
+
+    ssa_idx = ins->dst[0].reg.idx[0].offset;
+    return ssa_idx == normaliser->vpos_ssa || ssa_idx == normaliser->vface_ssa;
+}
+
 static void shader_instruction_normalise_io_params(struct vkd3d_shader_instruction *ins,
         struct io_normaliser *normaliser)
 {
@@ -5884,6 +5901,8 @@ static void shader_instruction_normalise_io_params(struct vkd3d_shader_instructi
             break;
         default:
             if (vsir_instruction_is_dcl(ins))
+                break;
+            if (io_normaliser_is_misctype_load(ins, normaliser))
                 break;
             for (i = 0; i < ins->dst_count; ++i)
             {
