@@ -192,6 +192,17 @@ static struct fence *fence_from_handle( VkFence handle )
     return CONTAINING_RECORD( obj, struct fence, obj );
 }
 
+/* MoltenVK imports host pointers in vkAllocateMemory, but it rejects the HOST_ALLOCATION handle type in
+ * VkExternalMemoryBufferCreateInfo / VkExternalMemoryImageCreateInfo with VK_ERROR_FEATURE_NOT_PRESENT (it only
+ * accepts its own MTLBuffer / MTLTexture / MTLHeap types there). Every buffer of a wow64 process failed that way,
+ * so neither wined3d's Vulkan renderer nor DXVK could start in a 32-bit program on macOS. MoltenVK wraps the
+ * imported pointer in a MTLBuffer at allocation time and does not need the hint on the buffer or image. */
+#ifdef __APPLE__
+static const BOOL host_memory_needs_external_create_info = FALSE;
+#else
+static const BOOL host_memory_needs_external_create_info = TRUE;
+#endif
+
 static VkResult allocate_external_host_memory( struct vulkan_device *device, VkMemoryAllocateInfo *alloc_info, uint32_t mem_flags,
                                                VkImportMemoryHostPointerInfoEXT *import_info )
 {
@@ -771,6 +782,45 @@ static void init_device_queues( struct vulkan_device *device, const VkDeviceQueu
     device->queue_count += create_info->queueCount;
 }
 
+#ifdef __APPLE__
+/* MoltenVK fails vkCreateDevice with VK_ERROR_FEATURE_NOT_PRESENT as soon as one requested core feature is
+ * missing in Metal. DXVK's d3d9 asks for geometryShader and shaderCullDistance unconditionally, although
+ * Direct3D 9 has neither, so no d3d9 program could create a device on stock MoltenVK. Drop the core features
+ * the host does not have instead of failing; this only changes requests that could not succeed anyway. */
+static VkResult mask_unsupported_core_features( struct vulkan_physical_device *physical_device, VkDeviceCreateInfo *info,
+                                                struct mempool *pool )
+{
+    struct vulkan_instance *instance = physical_device->instance;
+    VkPhysicalDeviceFeatures host, *enabled = NULL;
+    VkBaseOutStructure *next;
+    unsigned int i;
+
+    if (info->pEnabledFeatures)
+    {
+        /* the client structure is not copied by the thunks */
+        if (!(enabled = mem_alloc( pool, sizeof(*enabled) ))) return VK_ERROR_OUT_OF_HOST_MEMORY;
+        *enabled = *info->pEnabledFeatures;
+        info->pEnabledFeatures = enabled;
+    }
+    else for (next = (VkBaseOutStructure *)info->pNext; next; next = next->pNext)
+    {
+        if (next->sType != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2) continue;
+        enabled = &((VkPhysicalDeviceFeatures2 *)next)->features;
+        break;
+    }
+    if (!enabled) return VK_SUCCESS;
+
+    instance->p_vkGetPhysicalDeviceFeatures( physical_device->host.physical_device, &host );
+    for (i = 0; i < sizeof(host) / sizeof(VkBool32); i++)
+    {
+        if (!((VkBool32 *)enabled)[i] || ((VkBool32 *)&host)[i]) continue;
+        WARN( "Dropping core feature #%u, the host does not support it.\n", i + 1 );
+        ((VkBool32 *)enabled)[i] = VK_FALSE;
+    }
+    return VK_SUCCESS;
+}
+#endif
+
 static VkResult win32u_vkCreateDevice( VkPhysicalDevice client_physical_device, const VkDeviceCreateInfo *client_create_info,
                                        const VkAllocationCallbacks *allocator, VkDevice *client_device_ptr )
 {
@@ -799,6 +849,9 @@ static VkResult win32u_vkCreateDevice( VkPhysicalDevice client_physical_device, 
     device->extensions = client_device->extensions;
 
     if ((res = convert_device_create_info( physical_device, create_info, &pool, device ))) goto failed;
+#ifdef __APPLE__
+    if ((res = mask_unsupported_core_features( physical_device, create_info, &pool ))) goto failed;
+#endif
     if ((res = instance->p_vkCreateDevice( physical_device->host.physical_device, create_info, NULL /* allocator */, &host_device ))) goto failed;
 
     vulkan_object_init_ptr( &device->obj, (UINT_PTR)host_device, &client_device->obj );
@@ -1284,7 +1337,7 @@ static VkResult win32u_vkCreateBuffer( VkDevice client_device, const VkBufferCre
         }
     }
 
-    if (physical_device->external_memory_align && !external_info)
+    if (host_memory_needs_external_create_info && physical_device->external_memory_align && !external_info)
     {
         host_external_info.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
         host_external_info.pNext = create_info->pNext;
@@ -1396,7 +1449,7 @@ static VkResult win32u_vkCreateImage( VkDevice client_device, const VkImageCreat
         }
     }
 
-    if (physical_device->external_memory_align && !external_info)
+    if (host_memory_needs_external_create_info && physical_device->external_memory_align && !external_info)
     {
         host_external_info.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
         host_external_info.pNext = create_info->pNext;
